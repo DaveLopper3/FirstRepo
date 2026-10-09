@@ -339,7 +339,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
           const nx = dx / d, ny = dy / d;
           puck.x = p.x + nx * min;
           puck.y = p.y + ny * min;
-          const pvx = p.vx / dt, pvy = p.vy / dt;
+          const pvx = p.vx / frameDt, pvy = p.vy / frameDt;  // paddle speed in world units, so the speed setting scales every hit
           const rvx = puck.vx - pvx, rvy = puck.vy - pvy;
           const vn = rvx * nx + rvy * ny;
           if (vn < 0) {
