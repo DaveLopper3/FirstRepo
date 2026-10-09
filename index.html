@@ -34,7 +34,7 @@ canvas { display: block; touch-action: none; border-radius: 14px; }
 .overlay {
   position: fixed; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 18px; padding: 24px;
+  gap: 14px; padding: 24px 16px; overflow-y: auto; justify-content: safe center;
   background: rgba(8, 13, 26, 0.86);
   text-align: center;
 }
@@ -67,11 +67,13 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
 </head>
 <body>
 <canvas id="c" aria-label="Terrain d'air hockey"></canvas>
+<input type="file" id="faceInput" accept="image/*" multiple hidden>
 <div class="overlay" id="menu"></div>
 <script>
 (() => {
   const W = 400, H = 700;          // logical rink size
-  const PUCK_R = 17, PAD_R = 32;   // radii
+  let PUCK_R = 17;                 // 23 in Malcolm mode so the face is readable
+  const PAD_R = 32;
   const GOAL_HALF = 72;            // half width of each goal opening
   const WIN = 7;
   const SUB = 4;                   // physics substeps per frame
@@ -124,11 +126,82 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     try { const r = reqFS.call(root); if (r && r.catch) r.catch(() => {}); } catch (_) {}
   }
 
+  // ---- Malcolm mode: the puck is a face that changes on every hit ----
+  let malcolm = store.get('ah-malcolm') === '1';
+  let faceIdx = 0, facePulse = 0, faceSpin = 0;
+  let customData = [];
+  try { customData = JSON.parse(store.get('ah-faces') || '[]').filter((d) => typeof d === 'string'); } catch (_) {}
+  const toImg = (src) => { const im = new Image(); im.src = src; return im; };
+  let customImgs = customData.map(toImg);
+  function makeDefaultFace(i) {
+    const c = document.createElement('canvas'); c.width = c.height = 160;
+    const x = c.getContext('2d');
+    const bgs = ['#ffd166', '#ef476f', '#06d6a0', '#118ab2', '#f78c6b', '#c9a0ff'];
+    const skins = ['#f3c9a5', '#e0a679', '#f7d9bd', '#c98e62', '#f1c27d', '#e8b890'];
+    const hairs = ['#3b2a20', '#8a5a2b', '#222', '#d9a441', '#6b3a1e', '#b0b0b0'];
+    x.fillStyle = bgs[i % 6]; x.fillRect(0, 0, 160, 160);
+    x.fillStyle = skins[i % 6]; x.beginPath(); x.ellipse(80, 88, 48, 56, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = hairs[i % 6];
+    if (i % 3 === 0) { x.beginPath(); x.ellipse(80, 46, 50, 24, 0, Math.PI, 0); x.fill(); }
+    else if (i % 3 === 1) { x.fillRect(32, 40, 96, 20); x.beginPath(); x.arc(80, 44, 20, 0, Math.PI * 2); x.fill(); }
+    else { x.beginPath(); x.ellipse(80, 40, 52, 30, 0, Math.PI, 0); x.fill(); x.fillRect(28, 40, 14, 70); x.fillRect(118, 40, 14, 70); }
+    x.fillStyle = '#fff';
+    x.beginPath(); x.ellipse(60, 84, 11, 13, 0, 0, Math.PI * 2); x.ellipse(100, 84, 11, 13, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#1b1b1b';
+    x.beginPath(); x.arc(62 + (i % 2) * 3, 86, 5, 0, Math.PI * 2); x.arc(102 + (i % 2) * 3, 86, 5, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#1b1b1b'; x.lineWidth = 4; x.lineCap = 'round';
+    x.beginPath(); x.moveTo(48, 66 - (i % 2) * 5); x.lineTo(72, 70); x.moveTo(112, 66 - ((i + 1) % 2) * 5); x.lineTo(88, 70); x.stroke();
+    if (i % 2 === 0) { x.beginPath(); x.arc(80, 112, 20, 0.15 * Math.PI, 0.85 * Math.PI); x.stroke(); }
+    else { x.fillStyle = '#7a1f2b'; x.beginPath(); x.ellipse(80, 122, 15, 11, 0, 0, Math.PI * 2); x.fill(); x.fillStyle = '#ff7a8a'; x.beginPath(); x.ellipse(80, 128, 9, 5, 0, 0, Math.PI * 2); x.fill(); }
+    if (i % 3 === 2) { x.lineWidth = 3; x.beginPath(); x.arc(60, 84, 17, 0, Math.PI * 2); x.arc(100, 84, 17, 0, Math.PI * 2); x.moveTo(77, 84); x.lineTo(83, 84); x.stroke(); }
+    return c;
+  }
+  const defaultFaces = [0, 1, 2, 3, 4, 5].map(makeDefaultFace);
+  const facePool = () => (customImgs.length ? customImgs : defaultFaces);
+  function nextFace() {
+    const n = facePool().length;
+    if (n < 2) return;
+    let k;
+    do { k = Math.floor(Math.random() * n); } while (k === faceIdx);
+    faceIdx = k; facePulse = 1;
+  }
+  function applyPuckSize() { PUCK_R = malcolm ? 23 : 17; }
+  applyPuckSize();
+  function loadPhoto(file) {
+    return new Promise((res) => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        const sq = Math.min(im.width, im.height), c = document.createElement('canvas');
+        c.width = c.height = 160;
+        c.getContext('2d').drawImage(im, (im.width - sq) / 2, (im.height - sq) / 2, sq, sq, 0, 0, 160, 160);
+        URL.revokeObjectURL(url);
+        res(c.toDataURL('image/jpeg', 0.82));
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); res(null); };
+      im.src = url;
+    });
+  }
+  const faceInput = document.getElementById('faceInput');
+  faceInput.addEventListener('change', async () => {
+    for (const f of Array.from(faceInput.files).slice(0, 12)) {
+      if (customData.length >= 12) break;
+      const d = await loadPhoto(f);
+      if (d) { customData.push(d); customImgs.push(toImg(d)); }
+    }
+    faceInput.value = '';
+    store.set('ah-faces', JSON.stringify(customData));
+    faceIdx = 0;
+    markSettings();
+  });
+
   const btn = (attr, val, label) => '<button type="button" class="small" data-' + attr + '="' + val + '">' + label + '</button>';
   function settingsHTML() {
     return '<div class="speed"><span>Mode</span>' + btn('mode', 'cpu', "Contre l'ordinateur") + btn('mode', '2p', '2 joueurs') + '</div>' +
       '<div class="speed" data-for="cpu"><span>Difficulté</span>' + btn('diff', 'easy', 'Facile') + btn('diff', 'medium', 'Moyen') + btn('diff', 'hard', 'Difficile') + '</div>' +
       '<div class="speed"><span>Vitesse du palet</span>' + btn('speed', '0.4', 'Lent') + btn('speed', '0.65', 'Normal') + btn('speed', '1', 'Rapide') + btn('speed', '1.45', 'Turbo') + '</div>' +
+      '<div class="speed"><button type="button" class="small" data-malcolm="1"></button></div>' +
+      '<div class="speed" data-needs="malcolm"><button type="button" class="small" data-photos="1"></button><button type="button" class="small" data-reset="1">Visages d\'origine</button></div>' +
       (reqFS ? '<div class="speed"><button type="button" class="small" data-full="1"></button></div>' : '');
   }
   function renderMenu(winner) {
@@ -159,6 +232,15 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
       b.textContent = 'Plein écran : ' + (wantFull ? 'oui' : 'non');
       b.classList.toggle('on', wantFull);
     });
+    menu.querySelectorAll('[data-malcolm]').forEach((b) => {
+      b.textContent = 'Mode Malcolm : ' + (malcolm ? 'oui' : 'non');
+      b.classList.toggle('on', malcolm);
+    });
+    menu.querySelectorAll('[data-photos]').forEach((b) => {
+      b.textContent = 'Ajouter mes photos' + (customData.length ? ' (' + customData.length + ')' : '');
+    });
+    menu.querySelectorAll('[data-needs]').forEach((el) => { el.hidden = !malcolm; });
+    applyPuckSize();
     menu.querySelectorAll('[data-for]').forEach((el) => { el.hidden = el.dataset.for !== mode; });
   }
   menu.addEventListener('click', (e) => {
@@ -169,6 +251,9 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     else if (d.mode) { mode = d.mode; store.set('ah-mode', mode); }
     else if (d.diff) { diff = d.diff; store.set('ah-diff', diff); }
     else if (d.full) { wantFull = !wantFull; store.set('ah-full', wantFull ? 1 : 0); }
+    else if (d.malcolm) { malcolm = !malcolm; store.set('ah-malcolm', malcolm ? 1 : 0); }
+    else if (d.photos) { faceInput.click(); return; }
+    else if (d.reset) { customData = []; customImgs = []; store.set('ah-faces', '[]'); faceIdx = 0; }
     else if (d.start) { startGame(); return; }
     markSettings();
   });
@@ -347,6 +432,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
             puck.vx = rvx + j * nx + pvx;
             puck.vy = rvy + j * ny + pvy;
             hitSound(-vn, k === 0 ? 330 : 440);
+            if (malcolm) nextFace();
           }
         }
       }
@@ -431,14 +517,31 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     ctx.beginPath(); ctx.arc(p.x, p.y, PAD_R * 0.3, 0, Math.PI * 2); ctx.fill();
   }
 
+  function drawFace() {
+    const pool = facePool(), img = pool[faceIdx % pool.length];
+    const r = PUCK_R * (1 + facePulse * 0.35);
+    ctx.save();
+    ctx.shadowColor = C.puck; ctx.shadowBlur = 14;
+    ctx.fillStyle = C.puck;
+    ctx.beginPath(); ctx.arc(puck.x, puck.y, r + 2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(puck.x, puck.y, r, 0, Math.PI * 2); ctx.clip();
+    ctx.translate(puck.x, puck.y); ctx.rotate(faceSpin);
+    try { ctx.drawImage(img, -r, -r, r * 2, r * 2); } catch (_) {}
+    ctx.restore();
+  }
+
   function draw() {
     drawRink();
     drawPaddle(pads[0], C.top);
     drawPaddle(pads[1], C.bottom);
-    ctx.shadowColor = C.puck; ctx.shadowBlur = 14;
-    ctx.fillStyle = C.puck;
-    ctx.beginPath(); ctx.arc(puck.x, puck.y, PUCK_R, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
+    if (malcolm) drawFace();
+    else {
+      ctx.shadowColor = C.puck; ctx.shadowBlur = 14;
+      ctx.fillStyle = C.puck;
+      ctx.beginPath(); ctx.arc(puck.x, puck.y, PUCK_R, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
 
     if (flash > 0 && lastScorer >= 0) {
       ctx.globalAlpha = flash * 0.35;
@@ -474,6 +577,8 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
       puck.x = W / 2; puck.y = H / 2;
     }
     flash = Math.max(0, flash - 0.02 * dt);
+    facePulse = Math.max(0, facePulse - 0.06 * dt);
+    faceSpin += puck.vx * 0.012 * dt;
     draw();
     requestAnimationFrame(frame);
   }
