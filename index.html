@@ -53,6 +53,7 @@ canvas { display: block; touch-action: none; border-radius: 14px; }
   font-size: 0.95rem; padding: 10px 18px; box-shadow: none;
   background: transparent; color: var(--fg); border: 2px solid var(--line);
 }
+.speed button.small { font-size: 0.85rem; padding: 9px 14px; }
 .speed button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 button {
   font: inherit; font-weight: 700; font-size: 1.2rem; letter-spacing: 0.08em; text-transform: uppercase;
@@ -66,19 +67,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
 </head>
 <body>
 <canvas id="c" aria-label="Terrain d'air hockey"></canvas>
-<div class="overlay" id="menu">
-  <p class="flip">Joueur du haut<br>glisse ton doigt dans ta moitié</p>
-  <h1><span>Air</span> <span>Hockey</span></h1>
-  <p>Deux joueurs, un seul téléphone.<br>Le premier à 7 buts gagne.</p>
-  <div class="speed"><span>Vitesse du palet</span>
-    <button type="button" data-speed="0.4">Lent</button>
-    <button type="button" data-speed="0.65">Normal</button>
-    <button type="button" data-speed="1">Rapide</button>
-    <button type="button" data-speed="1.45">Turbo</button></div>
-  <div class="speed" id="fsRow" hidden><button type="button" id="fsToggle" aria-pressed="true">Plein écran : oui</button></div>
-  <button id="play" type="button">Jouer</button>
-  <p>Joueur du bas<br>glisse ton doigt dans ta moitié</p>
-</div>
+<div class="overlay" id="menu"></div>
 <script>
 (() => {
   const W = 400, H = 700;          // logical rink size
@@ -92,7 +81,6 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   const cv = document.getElementById('c');
   const ctx = cv.getContext('2d');
   const menu = document.getElementById('menu');
-  const playBtn = document.getElementById('play');
   let scale = 1;
 
   function resize() {
@@ -120,43 +108,70 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   let flash = 0;
   let wake = null;
   let speedMul = 0.65;
-  let wantFull = true;
-  try { wantFull = localStorage.getItem('ah-full') !== '0'; } catch (_) {}
+  let wantFull = true, mode = 'cpu', diff = 'medium';
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, String(v)); } catch (_) {} },
+  };
+  wantFull = store.get('ah-full') !== '0';
+  speedMul = parseFloat(store.get('ah-speed2')) || 0.65;
+  if (store.get('ah-mode') === '2p') mode = '2p';
+  if (['easy', 'medium', 'hard'].includes(store.get('ah-diff'))) diff = store.get('ah-diff');
   const root = document.documentElement;
   const reqFS = root.requestFullscreen || root.webkitRequestFullscreen;
-  const fsRow = document.getElementById('fsRow');
-  const fsToggle = document.getElementById('fsToggle');
-  function markFS() {
-    fsToggle.textContent = 'Plein écran : ' + (wantFull ? 'oui' : 'non');
-    fsToggle.classList.toggle('on', wantFull);
-    fsToggle.setAttribute('aria-pressed', String(wantFull));
-  }
   function goFull() {
     if (!wantFull || !reqFS || document.fullscreenElement || document.webkitFullscreenElement) return;
     try { const r = reqFS.call(root); if (r && r.catch) r.catch(() => {}); } catch (_) {}
   }
-  // iPhone Safari has no fullscreen API, so the toggle only shows where it can work.
-  if (reqFS) { fsRow.hidden = false; markFS(); }
-  fsToggle.addEventListener('click', () => {
-    wantFull = !wantFull;
-    try { localStorage.setItem('ah-full', wantFull ? '1' : '0'); } catch (_) {}
-    markFS();
-  });
-  try { speedMul = parseFloat(localStorage.getItem('ah-speed2')) || 0.65; } catch (_) {}
 
-  function markSpeed() {
-    menu.querySelectorAll('[data-speed]').forEach((b) => {
-      b.classList.toggle('on', parseFloat(b.dataset.speed) === speedMul);
+  const btn = (attr, val, label) => '<button type="button" class="small" data-' + attr + '="' + val + '">' + label + '</button>';
+  function settingsHTML() {
+    return '<div class="speed"><span>Mode</span>' + btn('mode', 'cpu', "Contre l'ordinateur") + btn('mode', '2p', '2 joueurs') + '</div>' +
+      '<div class="speed" data-for="cpu"><span>Difficulté</span>' + btn('diff', 'easy', 'Facile') + btn('diff', 'medium', 'Moyen') + btn('diff', 'hard', 'Difficile') + '</div>' +
+      '<div class="speed"><span>Vitesse du palet</span>' + btn('speed', '0.4', 'Lent') + btn('speed', '0.65', 'Normal') + btn('speed', '1', 'Rapide') + btn('speed', '1.45', 'Turbo') + '</div>' +
+      (reqFS ? '<div class="speed"><button type="button" class="small" data-full="1"></button></div>' : '');
+  }
+  function renderMenu(winner) {
+    const startLabel = winner === undefined ? 'Jouer' : 'Rejouer';
+    let head;
+    if (winner === undefined) {
+      head = '<p class="flip" data-for="2p">Joueur du haut<br>glisse ton doigt dans ta moitié</p>' +
+        '<h1><span>Air</span> <span>Hockey</span></h1>' +
+        '<p>Le premier à ' + WIN + ' buts gagne.</p>';
+    } else {
+      const col = winner === 0 ? 'var(--top)' : 'var(--bottom)';
+      const title = mode === 'cpu' ? (winner === 1 ? 'Tu as<br>gagné !' : "L'ordinateur<br>gagne") : 'Victoire<br>' + (winner === 0 ? 'rose' : 'turquoise');
+      head = '<p class="flip" data-for="2p">' + (winner === 0 ? 'Bravo !' : 'Dommage !') + '</p>' +
+        '<h1 style="color:' + col + '">' + title + '</h1><p>' + score[0] + ' – ' + score[1] + '</p>';
+    }
+    const foot = winner === undefined
+      ? '<p data-for="2p">Joueur du bas<br>glisse ton doigt dans ta moitié</p><p data-for="cpu">Tu joues en bas.<br>Glisse ton doigt pour bouger ton palet.</p>'
+      : '<p data-for="2p">' + (winner === 1 ? 'Bravo !' : 'Dommage !') + '</p>';
+    menu.innerHTML = head + settingsHTML() + '<button type="button" data-start="1">' + startLabel + '</button>' + foot;
+    markSettings();
+  }
+  function markSettings() {
+    const on = (sel, v) => menu.querySelectorAll(sel).forEach((b) => b.classList.toggle('on', v(b)));
+    on('[data-speed]', (b) => parseFloat(b.dataset.speed) === speedMul);
+    on('[data-mode]', (b) => b.dataset.mode === mode);
+    on('[data-diff]', (b) => b.dataset.diff === diff);
+    menu.querySelectorAll('[data-full]').forEach((b) => {
+      b.textContent = 'Plein écran : ' + (wantFull ? 'oui' : 'non');
+      b.classList.toggle('on', wantFull);
     });
+    menu.querySelectorAll('[data-for]').forEach((el) => { el.hidden = el.dataset.for !== mode; });
   }
   menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-speed]');
+    const b = e.target.closest('button');
     if (!b) return;
-    speedMul = parseFloat(b.dataset.speed);
-    try { localStorage.setItem('ah-speed2', String(speedMul)); } catch (_) {}
-    markSpeed();
+    const d = b.dataset;
+    if (d.speed) { speedMul = parseFloat(d.speed); store.set('ah-speed2', speedMul); }
+    else if (d.mode) { mode = d.mode; store.set('ah-mode', mode); }
+    else if (d.diff) { diff = d.diff; store.set('ah-diff', diff); }
+    else if (d.full) { wantFull = !wantFull; store.set('ah-full', wantFull ? 1 : 0); }
+    else if (d.start) { startGame(); return; }
+    markSettings();
   });
-  markSpeed();
 
   // ---- sound (created on first tap, required by iOS) ----
   let ac = null;
@@ -193,7 +208,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   cv.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     const { x, y } = pos(e);
-    const p = y < H / 2 ? 0 : 1;
+    const p = mode === 'cpu' ? 1 : y < H / 2 ? 0 : 1;
     for (const v of owners.values()) if (v === p) return;
     owners.set(e.pointerId, p);
     try { cv.setPointerCapture(e.pointerId); } catch (_) {}
@@ -229,14 +244,14 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
       if (navigator.wakeLock) navigator.wakeLock.request('screen').then((w) => { wake = w; }).catch(() => {});
     } catch (_) {}
   }
-  playBtn.addEventListener('click', () => {
+  function startGame() {
     if (!ac) {
       try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {}
     }
     if (ac && ac.state === 'suspended') ac.resume();
     goFull();
     newGame();
-  });
+  }
 
   function goal(scorer) {
     score[scorer]++;
@@ -247,25 +262,58 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     setTimeout(() => beep(780, 0.25, 'square', 0.1), 130);
     if (score[scorer] >= WIN) {
       state = 'over';
-      const name = scorer === 0 ? 'rose' : 'turquoise';
-      const col = scorer === 0 ? 'var(--top)' : 'var(--bottom)';
-      menu.innerHTML =
-        '<p class="flip">' + (scorer === 0 ? 'Bravo !' : 'Dommage !') + '</p>' +
-        '<h1 style="color:' + col + '">Victoire<br>' + name + '</h1>' +
-        '<p>' + score[0] + ' – ' + score[1] + '</p>' +
-        '<div class="speed"><span>Vitesse du palet</span>' +
-        '<button type="button" data-speed="0.4">Lent</button>' +
-        '<button type="button" data-speed="0.65">Normal</button>' +
-        '<button type="button" data-speed="1">Rapide</button>' +
-        '<button type="button" data-speed="1.45">Turbo</button></div>' +
-        '<button id="again" type="button">Rejouer</button>' +
-        '<p>' + (scorer === 1 ? 'Bravo !' : 'Dommage !') + '</p>';
-      document.getElementById('again').addEventListener('click', () => { goFull(); newGame(); });
-      markSpeed();
+      renderMenu(scorer);
       setTimeout(() => { menu.hidden = false; }, 900);
     } else {
       state = 'goal';
     }
+  }
+
+  // ---- computer opponent (plays the top paddle) ----
+  const AI = {
+    easy:   { speed: 4,  err: 40, still: 2.5 },
+    medium: { speed: 7,  err: 16, still: 4 },
+    hard:   { speed: 12, err: 4,  still: 6 },
+  };
+  let aiErr = 0, aiErrT = 0;
+  function predictX(y) {
+    if (puck.vy >= -0.2) return null;
+    const t = (y - puck.y) / puck.vy;
+    if (t < 0) return null;
+    const span = W - 2 * PUCK_R;
+    let u = (puck.x + puck.vx * t - PUCK_R) % (2 * span);
+    if (u < 0) u += 2 * span;
+    if (u > span) u = 2 * span - u;
+    return u + PUCK_R;
+  }
+  function aiUpdate(dt) {
+    const L = AI[diff], p = pads[0], homeY = 95;
+    aiErrT -= dt;
+    if (aiErrT <= 0) { aiErr = (Math.random() * 2 - 1) * L.err; aiErrT = 25 + Math.random() * 30; }
+    const inMyHalf = puck.y < H / 2 + 15;
+    const calm = Math.hypot(puck.vx, puck.vy) < L.still || puck.vy > 0;
+    let tx, ty;
+    if (inMyHalf && calm) {
+      // get behind the puck, then drive it toward the opponent's goal
+      let dx = W / 2 + aiErr * 0.5 - puck.x, dy = H - puck.y;
+      const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+      const gap = PAD_R + PUCK_R + 4;
+      const bx = puck.x - dx * gap, by = puck.y - dy * gap;
+      const dBehind = Math.hypot(bx - p.x, by - p.y);
+      if (p.y > puck.y - 6 && dBehind > 30) {
+        tx = puck.x + (p.x < puck.x ? -1 : 1) * (gap + 22);
+        ty = Math.max(30, puck.y - 40);
+      } else if (dBehind > 18) { tx = bx; ty = by; }
+      else { tx = puck.x + dx * 30; ty = puck.y + dy * 30; }
+    } else {
+      const px = diff === 'easy' ? null : predictX(homeY);
+      tx = (px !== null ? px : puck.x * 0.8 + W / 4) + aiErr;
+      ty = homeY;
+    }
+    const lim = L.speed * dt * Math.max(0.6, Math.min(2, speedMul / 0.65));
+    const ddx = tx - p.tx, ddy = ty - p.ty, dd = Math.hypot(ddx, ddy);
+    const f = dd > lim ? lim / dd : 1;
+    setTarget(0, p.tx + ddx * f, p.ty + ddy * f);
   }
 
   // ---- physics ----
@@ -411,6 +459,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     const dt = Math.min(2.5, (now - last) / 16.667);
     last = now;
     if (state === 'playing') {
+      if (mode === 'cpu') aiUpdate(dt);
       step(dt);
     } else if (state === 'goal') {
       stateT += dt;
@@ -428,6 +477,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     draw();
     requestAnimationFrame(frame);
   }
+  renderMenu();
   requestAnimationFrame(frame);
 })();
 </script>
