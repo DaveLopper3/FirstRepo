@@ -127,6 +127,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
 
   // ---- Malcolm mode: a family portrait fills the center circle and changes on every goal ----
   let malcolm = store.get('ah-malcolm') === '1';
+  let soundOn = store.get('ah-sound') === '1';   // off by default
   let faceIdx = 0, facePulse = 0;
   let customData = [];
   try { customData = JSON.parse(store.get('ah-faces') || '[]').filter((d) => typeof d === 'string'); } catch (_) {}
@@ -182,7 +183,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     return '<div class="speed"><span>Mode</span>' + btn('mode', 'cpu', "Contre l'ordinateur") + btn('mode', '2p', '2 joueurs') + '</div>' +
       '<div class="speed" data-for="cpu"><span>Difficulté</span>' + btn('diff', 'easy', 'Facile') + btn('diff', 'medium', 'Moyen') + btn('diff', 'hard', 'Difficile') + '</div>' +
       '<div class="speed"><span>Vitesse du palet</span>' + btn('speed', '0.4', 'Lent') + btn('speed', '0.65', 'Normal') + btn('speed', '1', 'Rapide') + btn('speed', '1.45', 'Turbo') + '</div>' +
-      '<div class="speed"><button type="button" class="small" data-malcolm="1"></button></div>' +
+      '<div class="speed"><button type="button" class="small" data-sound="1"></button><button type="button" class="small" data-malcolm="1"></button></div>' +
       '<div class="speed" data-needs="malcolm"><button type="button" class="small" data-photos="1"></button><button type="button" class="small" data-reset="1">Visages d\'origine</button></div>' +
       (reqFS ? '<div class="speed"><button type="button" class="small" data-full="1"></button></div>' : '');
   }
@@ -214,6 +215,10 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
       b.textContent = 'Plein écran : ' + (wantFull ? 'oui' : 'non');
       b.classList.toggle('on', wantFull);
     });
+    menu.querySelectorAll('[data-sound]').forEach((b) => {
+      b.textContent = 'Son : ' + (soundOn ? 'oui' : 'non');
+      b.classList.toggle('on', soundOn);
+    });
     menu.querySelectorAll('[data-malcolm]').forEach((b) => {
       b.textContent = 'Mode Malcolm : ' + (malcolm ? 'oui' : 'non');
       b.classList.toggle('on', malcolm);
@@ -232,6 +237,14 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     else if (d.mode) { mode = d.mode; store.set('ah-mode', mode); }
     else if (d.diff) { diff = d.diff; store.set('ah-diff', diff); }
     else if (d.full) { wantFull = !wantFull; store.set('ah-full', wantFull ? 1 : 0); }
+    else if (d.sound) {
+      soundOn = !soundOn; store.set('ah-sound', soundOn ? 1 : 0);
+      if (soundOn) {
+        if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
+        if (ac && ac.state === 'suspended') ac.resume();
+        beep(660, 0.1, 'triangle', 0.15);
+      }
+    }
     else if (d.malcolm) { malcolm = !malcolm; store.set('ah-malcolm', malcolm ? 1 : 0); }
     else if (d.photos) { faceInput.click(); return; }
     else if (d.reset) { customData = []; customImgs = []; store.set('ah-faces', '[]'); faceIdx = 0; }
@@ -242,7 +255,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   // ---- sound (created on first tap, required by iOS) ----
   let ac = null;
   function beep(freq, dur, type = 'sine', gain = 0.15) {
-    if (!ac) return;
+    if (!soundOn || !ac) return;
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.value = freq;
     g.gain.setValueAtTime(gain, ac.currentTime);
