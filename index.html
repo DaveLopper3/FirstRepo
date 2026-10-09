@@ -47,6 +47,13 @@ canvas { display: block; touch-action: none; border-radius: 14px; }
 .overlay h1 span:last-child { color: var(--bottom); }
 .overlay p { margin: 0; color: var(--muted); max-width: 28ch; line-height: 1.45; }
 .flip { transform: rotate(180deg); }
+.speed { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.speed span { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; width: 100%; }
+.speed button {
+  font-size: 0.95rem; padding: 10px 18px; box-shadow: none;
+  background: transparent; color: var(--fg); border: 2px solid var(--line);
+}
+.speed button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 button {
   font: inherit; font-weight: 700; font-size: 1.2rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--bg); background: var(--bottom);
@@ -63,6 +70,10 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   <p class="flip">Joueur du haut<br>glisse ton doigt dans ta moitié</p>
   <h1><span>Air</span> <span>Hockey</span></h1>
   <p>Deux joueurs, un seul téléphone.<br>Le premier à 7 buts gagne.</p>
+  <div class="speed"><span>Vitesse du palet</span>
+    <button type="button" data-speed="0.65">Lent</button>
+    <button type="button" data-speed="1">Normal</button>
+    <button type="button" data-speed="1.45">Rapide</button></div>
   <button id="play" type="button">Jouer</button>
   <p>Joueur du bas<br>glisse ton doigt dans ta moitié</p>
 </div>
@@ -106,6 +117,22 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   let lastScorer = -1;
   let flash = 0;
   let wake = null;
+  let speedMul = 1;
+  try { speedMul = parseFloat(localStorage.getItem('ah-speed')) || 1; } catch (_) {}
+
+  function markSpeed() {
+    menu.querySelectorAll('[data-speed]').forEach((b) => {
+      b.classList.toggle('on', parseFloat(b.dataset.speed) === speedMul);
+    });
+  }
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-speed]');
+    if (!b) return;
+    speedMul = parseFloat(b.dataset.speed);
+    try { localStorage.setItem('ah-speed', String(speedMul)); } catch (_) {}
+    markSpeed();
+  });
+  markSpeed();
 
   // ---- sound (created on first tap, required by iOS) ----
   let ac = null;
@@ -201,9 +228,14 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
         '<p class="flip">' + (scorer === 0 ? 'Bravo !' : 'Dommage !') + '</p>' +
         '<h1 style="color:' + col + '">Victoire<br>' + name + '</h1>' +
         '<p>' + score[0] + ' – ' + score[1] + '</p>' +
+        '<div class="speed"><span>Vitesse du palet</span>' +
+        '<button type="button" data-speed="0.65">Lent</button>' +
+        '<button type="button" data-speed="1">Normal</button>' +
+        '<button type="button" data-speed="1.45">Rapide</button></div>' +
         '<button id="again" type="button">Rejouer</button>' +
         '<p>' + (scorer === 1 ? 'Bravo !' : 'Dommage !') + '</p>';
       document.getElementById('again').addEventListener('click', newGame);
+      markSpeed();
       setTimeout(() => { menu.hidden = false; }, 900);
     } else {
       state = 'goal';
@@ -211,7 +243,8 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   }
 
   // ---- physics ----
-  function step(dt) {
+  function step(frameDt) {
+    const dt = frameDt * speedMul;
     // paddles glide toward their targets; velocity feeds the hit
     for (const p of pads) {
       p.vx = (p.tx - p.x) / SUB;
