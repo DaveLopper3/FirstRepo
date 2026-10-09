@@ -74,6 +74,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     <button type="button" data-speed="0.65">Lent</button>
     <button type="button" data-speed="1">Normal</button>
     <button type="button" data-speed="1.45">Rapide</button></div>
+  <div class="speed" id="fsRow" hidden><button type="button" id="fsToggle" aria-pressed="true">Plein écran : oui</button></div>
   <button id="play" type="button">Jouer</button>
   <p>Joueur du bas<br>glisse ton doigt dans ta moitié</p>
 </div>
@@ -118,6 +119,28 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   let flash = 0;
   let wake = null;
   let speedMul = 1;
+  let wantFull = true;
+  try { wantFull = localStorage.getItem('ah-full') !== '0'; } catch (_) {}
+  const root = document.documentElement;
+  const reqFS = root.requestFullscreen || root.webkitRequestFullscreen;
+  const fsRow = document.getElementById('fsRow');
+  const fsToggle = document.getElementById('fsToggle');
+  function markFS() {
+    fsToggle.textContent = 'Plein écran : ' + (wantFull ? 'oui' : 'non');
+    fsToggle.classList.toggle('on', wantFull);
+    fsToggle.setAttribute('aria-pressed', String(wantFull));
+  }
+  function goFull() {
+    if (!wantFull || !reqFS || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try { const r = reqFS.call(root); if (r && r.catch) r.catch(() => {}); } catch (_) {}
+  }
+  // iPhone Safari has no fullscreen API, so the toggle only shows where it can work.
+  if (reqFS) { fsRow.hidden = false; markFS(); }
+  fsToggle.addEventListener('click', () => {
+    wantFull = !wantFull;
+    try { localStorage.setItem('ah-full', wantFull ? '1' : '0'); } catch (_) {}
+    markFS();
+  });
   try { speedMul = parseFloat(localStorage.getItem('ah-speed')) || 1; } catch (_) {}
 
   function markSpeed() {
@@ -210,6 +233,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
       try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {}
     }
     if (ac && ac.state === 'suspended') ac.resume();
+    goFull();
     newGame();
   });
 
@@ -234,7 +258,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
         '<button type="button" data-speed="1.45">Rapide</button></div>' +
         '<button id="again" type="button">Rejouer</button>' +
         '<p>' + (scorer === 1 ? 'Bravo !' : 'Dommage !') + '</p>';
-      document.getElementById('again').addEventListener('click', newGame);
+      document.getElementById('again').addEventListener('click', () => { goFull(); newGame(); });
       markSpeed();
       setTimeout(() => { menu.hidden = false; }, 900);
     } else {
