@@ -71,9 +71,10 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   <h1><span>Air</span> <span>Hockey</span></h1>
   <p>Deux joueurs, un seul téléphone.<br>Le premier à 7 buts gagne.</p>
   <div class="speed"><span>Vitesse du palet</span>
-    <button type="button" data-speed="0.65">Lent</button>
-    <button type="button" data-speed="1">Normal</button>
-    <button type="button" data-speed="1.45">Rapide</button></div>
+    <button type="button" data-speed="0.4">Lent</button>
+    <button type="button" data-speed="0.65">Normal</button>
+    <button type="button" data-speed="1">Rapide</button>
+    <button type="button" data-speed="1.45">Turbo</button></div>
   <div class="speed" id="fsRow" hidden><button type="button" id="fsToggle" aria-pressed="true">Plein écran : oui</button></div>
   <button id="play" type="button">Jouer</button>
   <p>Joueur du bas<br>glisse ton doigt dans ta moitié</p>
@@ -118,7 +119,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
   let lastScorer = -1;
   let flash = 0;
   let wake = null;
-  let speedMul = 1;
+  let speedMul = 0.65;
   let wantFull = true;
   try { wantFull = localStorage.getItem('ah-full') !== '0'; } catch (_) {}
   const root = document.documentElement;
@@ -141,7 +142,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     try { localStorage.setItem('ah-full', wantFull ? '1' : '0'); } catch (_) {}
     markFS();
   });
-  try { speedMul = parseFloat(localStorage.getItem('ah-speed')) || 1; } catch (_) {}
+  try { speedMul = parseFloat(localStorage.getItem('ah-speed2')) || 0.65; } catch (_) {}
 
   function markSpeed() {
     menu.querySelectorAll('[data-speed]').forEach((b) => {
@@ -152,7 +153,7 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
     const b = e.target.closest('[data-speed]');
     if (!b) return;
     speedMul = parseFloat(b.dataset.speed);
-    try { localStorage.setItem('ah-speed', String(speedMul)); } catch (_) {}
+    try { localStorage.setItem('ah-speed2', String(speedMul)); } catch (_) {}
     markSpeed();
   });
   markSpeed();
@@ -253,9 +254,10 @@ button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
         '<h1 style="color:' + col + '">Victoire<br>' + name + '</h1>' +
         '<p>' + score[0] + ' – ' + score[1] + '</p>' +
         '<div class="speed"><span>Vitesse du palet</span>' +
-        '<button type="button" data-speed="0.65">Lent</button>' +
-        '<button type="button" data-speed="1">Normal</button>' +
-        '<button type="button" data-speed="1.45">Rapide</button></div>' +
+        '<button type="button" data-speed="0.4">Lent</button>' +
+        '<button type="button" data-speed="0.65">Normal</button>' +
+        '<button type="button" data-speed="1">Rapide</button>' +
+        '<button type="button" data-speed="1.45">Turbo</button></div>' +
         '<button id="again" type="button">Rejouer</button>' +
         '<p>' + (scorer === 1 ? 'Bravo !' : 'Dommage !') + '</p>';
       document.getElementById('again').addEventListener('click', () => { goFull(); newGame(); });
